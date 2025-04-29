@@ -1,4 +1,4 @@
-/* ---------- index.js  (CommonJS) ---------- */
+/* ---------- index.js  CommonJS COMPLETE ---------- */
 const express = require('express');
 const cors    = require('cors');
 const { MongoClient, ObjectId } = require('mongodb');
@@ -9,20 +9,19 @@ async function main() {
   const client = new MongoClient(uri);
   await client.connect();
   const db = client.db('metaverse');
-  console.log('✔ Connected to MongoDB');
+  console.log('✔ Mongo connected');
 
   const app = express();
   app.use(cors());
   app.use(express.json());
 
-  /* ---- GET one screen’s video ---- */
+  /* ───── video routes stay unchanged ───── */
   app.get('/video/:screenId', async (req, res) => {
     const doc = await db.collection('videos').findOne({ _id: req.params.screenId });
     if (!doc) return res.status(404).send('no video');
-    res.json(doc);                           // { _id, mp4Url }
+    res.json(doc);
   });
 
-  /* ---- UPDATE one screen’s video ---- */
   app.post('/video/:screenId', async (req, res) => {
     await db.collection('videos').updateOne(
       { _id: req.params.screenId },
@@ -32,20 +31,35 @@ async function main() {
     res.sendStatus(204);
   });
 
-  /* ---- optional: session routes stay unchanged ---- */
-  app.post('/sessions/start', async (req,res)=>{
-    const r = await db.collection('sessions').insertOne(req.body);
+  /* ───── session start ───── */
+  app.post('/sessions/start', async (req, res) => {
+    const doc = {
+      userId : req.body.userId || 'Guest',
+      room   : req.body.room   || null,
+      joined : new Date(),
+      active : true
+    };
+    const r = await db.collection('sessions').insertOne(doc);
     res.status(201).json({ _id: r.insertedId });
   });
-  app.post('/sessions/end', async (req,res)=>{
+
+  /* ───── session end ───── */
+  app.post('/sessions/end', async (req, res) => {
+    const id   = new ObjectId(req.body._id);
+    const left = new Date();
+
+    const prev = await db.collection('sessions').findOne({ _id: id });
+    const dur  = prev ? (left - prev.joined) / 1000 : null;  // seconds
+
     await db.collection('sessions').updateOne(
-      { _id: new ObjectId(req.body._id) },
-      { $set:{ left:req.body.left }});
+      { _id: id },
+      { $set: { left, durationSeconds: dur, active: false } }
+    );
     res.sendStatus(204);
   });
 
   app.listen(process.env.PORT || 4000,
-    ()=>console.log(`🌐 API on ${process.env.PORT||4000}`));
+    () => console.log(`🌐 API up on ${process.env.PORT || 4000}`));
 }
 
-main().catch(err=>{ console.error(err); process.exit(1); });
+main().catch(err => { console.error(err); process.exit(1); });
